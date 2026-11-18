@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ask Your Database</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23E8552D'/%3E%3Ctext x='16' y='21' font-family='monospace' font-size='12' font-weight='700' text-anchor='middle' fill='white'%3ESQL%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="logo">T2S</div>
+    <div>
+      <h1>Ask your database</h1>
+      <div class="sub">Text-to-SQL with a verification gate · COMP 5112 · Group 6</div>
+    </div>
+  </div>
+  <div class="spacer"></div>
+  <div class="pills" id="pills">
+    <span class="pill" id="pill-db"><span class="dot"></span>database</span>
+    <span class="pill" id="pill-ollama"><span class="dot"></span>ollama</span>
+    <span class="pill" id="pill-gemini"><span class="dot"></span>gemini</span>
+  </div>
+  <button class="tbtn" id="btn-big" title="Bigger text for the projector">A+</button>
+  <a class="tbtn" href="/docs" target="_blank" rel="noopener">API docs</a>
+</header>
+
+<div class="layout">
+  <!-- ═════════════════ left: connection + schema ═════════════════ -->
+  <aside>
+    <section class="card">
+      <div class="hd"><span class="tag">01</span><h2>Database connection</h2></div>
+      <div class="bd">
+        <div class="seg" id="conn-mode">
+          <button data-mode="default" class="on">Default (.env)</button>
+          <button data-mode="custom">Custom</button>
+        </div>
+
+        <div id="conn-default">
+          <div class="kv" id="default-info"><span>loading…</span><span></span></div>
+          <div class="field" style="margin-top:10px">
+            <label for="default-db">Database on this server</label>
+            <select id="default-db"></select>
+          </div>
+          <p class="note">Uses the host, user and password from your <code>.env</code>. The password never reaches the browser.</p>
+        </div>
+
+        <div id="conn-custom" class="hidden">
+          <div class="row2">
+            <div class="field"><label for="c-host">Host</label><input type="text" id="c-host" value="localhost"></div>
+            <div class="field"><label for="c-port">Port</label><input type="number" id="c-port" value="5432"></div>
+          </div>
+          <div class="field"><label for="c-db">Database</label><input type="text" id="c-db" placeholder="adventureworks"></div>
+          <div class="field"><label for="c-user">User</label><input type="text" id="c-user" placeholder="postgres"></div>
+          <div class="field"><label for="c-pw">Password</label><input type="password" id="c-pw" autocomplete="off"></div>
+          <div class="row2">
+            <div class="field"><label for="c-ssl">SSL mode</label>
+              <select id="c-ssl"><option>prefer</option><option>disable</option><option>require</option><option>allow</option></select>
+            </div>
+            <div class="field"><label for="c-views">Views</label>
+              <select id="c-views"><option value="0">no</option><option value="1">include</option></select>
+            </div>
+          </div>
+          <div class="field"><label for="c-schemas">Only these schemas (optional, comma separated)</label><input type="text" id="c-schemas" placeholder="sales, production"></div>
+          <p class="note">Every session is opened <b>read-only</b> with a statement timeout, whatever user you connect as.</p>
+        </div>
+
+        <div class="btns" style="margin-top:6px">
+          <button class="btn" id="btn-test">Test connection</button>
+          <button class="btn dark" id="btn-schema">Load schema</button>
+        </div>
+        <div id="conn-status"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="hd"><span class="tag">02</span><h2>Schema explorer</h2>
+        <div class="right"><button class="btn small" id="btn-refresh-schema" title="Re-read the schema from the database">↻</button></div>
+      </div>
+      <div class="bd">
+        <div class="stats" id="schema-stats">
+          <div class="stat"><b>–</b><span>schemas</span></div>
+          <div class="stat"><b>–</b><span>tables</span></div>
+          <div class="stat"><b>–</b><span>columns</span></div>
+          <div class="stat"><b>–</b><span>FKs</span></div>
+        </div>
+        <input type="search" id="schema-search" placeholder="Search tables and columns…">
+        <div class="tree" id="schema-tree"><div class="empty">Load a schema to explore it.</div></div>
+        <p class="note" id="schema-note"></p>
+      </div>
+    </section>
+  </aside>
+
+  <!-- ═════════════════ right: ask + pipeline ═════════════════ -->
+  <main>
+    <section class="card ask">
+      <div class="hd"><span class="tag">03</span><h2>Ask a question in plain English</h2></div>
+      <div class="bd">
+        <textarea id="question" placeholder="e.g. What is the total revenue by product category?"></textarea>
+        <div class="askrow">
+          <div class="field">
+            <label for="model">Model</label>
+            <select id="model"></select>
+          </div>
+          <button class="btn primary" id="btn-ask">Ask ▸</button>
+          <button class="btn hidden" id="btn-stop">Stop</button>
+        </div>
+
+        <div class="tabs" id="ex-tabs">
+          <button data-g="answerable" class="on">Answerable</button>
+          <button data-g="unanswerable">Not in the data</button>
+          <button data-g="unsafe">Harmful</button>
+          <span class="note" id="ex-note">Example questions for AdventureWorks</span>
+        </div>
+        <div class="chips" id="ex-chips"></div>
+
+        <details class="opts">
+          <summary>Options</summary>
+          <div class="optgrid">
+            <label class="check"><input type="checkbox" id="o-per-stage"> Different model per step</label>
+            <div class="field per-stage hidden"><label for="m-schema">Step 3 · shrink schema</label><select id="m-schema"></select></div>
+            <div class="field per-stage hidden"><label for="m-sql">Step 4 · write SQL</label><select id="m-sql"></select></div>
+            <div class="field per-stage hidden"><label for="m-answer">Step 7 · write answer</label><select id="m-answer"></select></div>
+          </div>
+          <div class="optgrid">
+            <div class="field"><label for="o-strategy">Schema given to the model</label>
+              <select id="o-strategy">
+                <option value="llm">Shrunk by the LLM (proposed)</option>
+                <option value="full">Full schema (baseline)</option>
+              </select>
+            </div>
+            <div class="field"><label for="o-maxtables">Max tables to keep</label><input type="number" id="o-maxtables" value="8" min="1" max="30"></div>
+            <div class="field"><label for="o-repairs">Repair attempts</label><input type="number" id="o-repairs" value="2" min="0" max="5"></div>
+            <div class="field"><label for="o-rows">Row limit</label><input type="number" id="o-rows" value="200" min="1" max="5000"></div>
+          </div>
+          <div class="optgrid">
+            <label class="check"><input type="checkbox" id="o-prunecols" checked> Shrink columns too</label>
+            <label class="check"><input type="checkbox" id="o-verify" checked> Run the verification gate</label>
+            <label class="check"><input type="checkbox" id="o-refresh"> Re-read schema (skip cache)</label>
+          </div>
+          <div class="field" style="margin-top:10px"><label>Switch off individual checks (ablation)</label>
+            <div class="layers" id="o-layers">
+              <label class="check"><input type="checkbox" value="l1"> L1 valid SQL</label>
+              <label class="check"><input type="checkbox" value="l3"> L3 read-only &amp; safe</label>
+              <label class="check"><input type="checkbox" value="l2"> L2 tables &amp; columns</label>
+              <label class="check"><input type="checkbox" value="l4"> L4 query plan</label>
+              <label class="check"><input type="checkbox" value="l5"> L5 result sniff</label>
+            </div>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <!-- the seven steps -->
+    <section class="card">
+      <div class="hd"><span class="tag">04</span><h2>What happens to your question</h2>
+        <div class="right"><span class="status-chip" id="run-chip">idle</span></div>
+      </div>
+      <div class="flow" id="flow"></div>
+    </section>
+
+    <section class="card final hidden" id="final"></section>
+
+    <div id="stages"></div>
+
+    <section class="card" id="howto-card">
+      <div class="hd"><span class="tag">How</span><h2>How it works</h2></div>
+      <div class="bd howto" id="howto"></div>
+    </section>
+
+    <section class="card">
+      <div class="hd"><span class="tag">Log</span><h2>Recent questions</h2>
+        <div class="right"><button class="btn small" id="btn-runs">↻</button></div>
+      </div>
+      <div class="bd"><div class="hist" id="runs"><div class="empty">No questions yet.</div></div></div>
+    </section>
+    <footer>Every query runs in a read-only transaction. Answers are checked number-by-number against the result rows.</footer>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
